@@ -1,7 +1,5 @@
-tensorflow==2.16.1
+tflite-runtime
 numpy
 pillow
 flask
-matplotlib
-scikit-learn
 gunicorn
