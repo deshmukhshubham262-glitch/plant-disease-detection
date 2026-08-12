@@ -1,0 +1,75 @@
+{
+  "Tomato___Bacterial_spot": {
+    "precision": 0.8065395095367848,
+    "recall": 0.925,
+    "f1-score": 0.8617176128093159,
+    "support": 320.0
+  },
+  "Tomato___Early_blight": {
+    "precision": 0.8695652173913043,
+    "recall": 0.4,
+    "f1-score": 0.547945205479452,
+    "support": 150.0
+  },
+  "Tomato___Late_blight": {
+    "precision": 0.9344894026974951,
+    "recall": 0.9150943396226415,
+    "f1-score": 0.9246901811248809,
+    "support": 530.0
+  },
+  "Tomato___Leaf_Mold": {
+    "precision": 0.8395904436860068,
+    "recall": 0.9077490774907749,
+    "f1-score": 0.8723404255319149,
+    "support": 271.0
+  },
+  "Tomato___Septoria_leaf_spot": {
+    "precision": 0.8768577494692145,
+    "recall": 0.8276553106212425,
+    "f1-score": 0.8515463917525773,
+    "support": 499.0
+  },
+  "Tomato___Spider_mites Two-spotted_spider_mite": {
+    "precision": 0.8772321428571429,
+    "recall": 0.8562091503267973,
+    "f1-score": 0.8665931642778391,
+    "support": 459.0
+  },
+  "Tomato___Target_Spot": {
+    "precision": 0.729957805907173,
+    "recall": 0.8804071246819338,
+    "f1-score": 0.798154555940023,
+    "support": 393.0
+  },
+  "Tomato___Tomato_Yellow_Leaf_Curl_Virus": {
+    "precision": 0.9905913978494624,
+    "recall": 0.980705256154358,
+    "f1-score": 0.9856235372785022,
+    "support": 1503.0
+  },
+  "Tomato___Tomato_mosaic_virus": {
+    "precision": 0.987012987012987,
+    "recall": 0.7102803738317757,
+    "f1-score": 0.8260869565217391,
+    "support": 107.0
+  },
+  "Tomato___healthy": {
+    "precision": 0.8796992481203008,
+    "recall": 0.975,
+    "f1-score": 0.924901185770751,
+    "support": 240.0
+  },
+  "accuracy": 0.899597495527728,
+  "macro avg": {
+    "precision": 0.8791535904527873,
+    "recall": 0.8378100632729524,
+    "f1-score": 0.8459599216486996,
+    "support": 4472.0
+  },
+  "weighted avg": {
+    "precision": 0.9042951448421592,
+    "recall": 0.899597495527728,
+    "f1-score": 0.8972616024309309,
+    "support": 4472.0
+  }
+}

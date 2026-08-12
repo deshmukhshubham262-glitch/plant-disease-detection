@@ -1,0 +1,6 @@
+data/raw/
+data/dataset/
+temp_upload/*
+!temp_upload/.gitkeep
+__pycache__/
+*.pyc
