@@ -67,11 +67,37 @@ model.compile(
 
 model.summary()
 
-# ---- 4. Train ----
+# ---- 4. Train (with checkpointing so you can stop and resume) ----
+checkpoint_path = os.path.join(config.MODEL_DIR, "checkpoint.keras")
+
+# If a checkpoint exists from a previous run, resume from it
+initial_epoch = 0
+if os.path.exists(checkpoint_path):
+    print(f"Found existing checkpoint at {checkpoint_path}, resuming training...")
+    model = tf.keras.models.load_model(checkpoint_path)
+    # Read how many epochs were already done, if we saved that info
+    epoch_log_path = os.path.join(config.MODEL_DIR, "last_epoch.txt")
+    if os.path.exists(epoch_log_path):
+        with open(epoch_log_path, "r") as f:
+            initial_epoch = int(f.read().strip())
+        print(f"Resuming from epoch {initial_epoch}")
+
+checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
+    filepath=checkpoint_path,
+    save_freq="epoch"
+)
+
+class EpochLogger(tf.keras.callbacks.Callback):
+    def on_epoch_end(self, epoch, logs=None):
+        with open(os.path.join(config.MODEL_DIR, "last_epoch.txt"), "w") as f:
+            f.write(str(epoch + 1))
+
 history = model.fit(
     train_ds,
     validation_data=val_ds,
-    epochs=config.EPOCHS
+    epochs=config.EPOCHS,
+    initial_epoch=initial_epoch,
+    callbacks=[checkpoint_callback, EpochLogger()]
 )
 
 # ---- 5. Save the model ----

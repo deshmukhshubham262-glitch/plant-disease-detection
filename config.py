@@ -22,7 +22,7 @@ METRICS_PATH = os.path.join(OUTPUT_DIR, "metrics.json")
 
 # Image settings
 IMG_SIZE = (224, 224)   # width, height fed into the model
-BATCH_SIZE = 16
+BATCH_SIZE = 15
 
 # Training settings
 EPOCHS = 15
