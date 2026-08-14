@@ -16,6 +16,8 @@ app = Flask(__name__)
 app.config["UPLOAD_FOLDER"] = os.path.join(config.BASE_DIR, "temp_upload")
 os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 
+CONFIDENCE_THRESHOLD = 0.40
+
 print("Loading TFLite model...")
 tflite_path = config.MODEL_PATH.replace(".keras", ".tflite")
 interpreter = tflite.Interpreter(model_path=tflite_path)
@@ -63,22 +65,17 @@ def build_disease_library():
     return dict(sorted(library.items()))
 
 DISEASE_LIBRARY = build_disease_library()
+NUM_CROPS = len(DISEASE_LIBRARY)
+NUM_CLASSES = len(class_names)
 
 def looks_like_a_leaf(filepath, min_green_ratio=0.12):
-    """Rough heuristic: checks if the image has enough green/plant-like coloring."""
     img = Image.open(filepath).convert("RGB").resize((100, 100))
     pixels = np.array(img, dtype=np.float32)
-
     r, g, b = pixels[:, :, 0], pixels[:, :, 1], pixels[:, :, 2]
-
-    # A pixel counts as "plant-like" if green is the dominant or a strong channel,
-    # OR if it's a brownish/yellowish tone (covers diseased, dry, or autumn leaves too)
     green_dominant = (g > r) & (g > b * 0.8)
     brownish = (r > 80) & (r < 200) & (g > 60) & (g < 180) & (b < 120) & (r >= g)
-
     plant_like = green_dominant | brownish
     ratio = np.mean(plant_like)
-
     return ratio >= min_green_ratio
 
 def predict_image(filepath):
@@ -91,11 +88,23 @@ def predict_image(filepath):
     preds = interpreter.get_tensor(output_details[0]['index'])[0]
 
     top_indices = np.argsort(preds)[::-1][:3]
-    results = [(format_disease_only(class_names[i]), float(preds[i])) for i in top_indices]
+    raw_confidences = [float(preds[i]) for i in top_indices]
+    labels = [format_disease_only(class_names[i]) for i in top_indices]
+
+    # Real model confidence (out of all 38 classes) decides if we trust the result
+    top_confidence = raw_confidences[0]
+    is_confident = top_confidence >= CONFIDENCE_THRESHOLD
+
+    # Re-scale just the shown top-3 so their slice of the "cake" adds up to 100%
+    total = sum(raw_confidences)
+    normalized = [c / total for c in raw_confidences] if total > 0 else raw_confidences
+
+    results = list(zip(labels, normalized))
+
     top_raw_class = class_names[top_indices[0]]
     solution = treatments.get(top_raw_class, "No specific guidance available for this condition.")
 
-    return results, solution
+    return results, solution, is_confident, top_confidence
 
 PAGE_TEMPLATE = """
 <!DOCTYPE html>
@@ -187,6 +196,9 @@ PAGE_TEMPLATE = """
   .primary-result { text-align: center; background: linear-gradient(135deg, var(--green-pale), #ffffff); border-radius: 20px; padding: 22px; border: 1px solid var(--green-light); display: flex; flex-direction: column; justify-content: center; }
   .primary-result .label { font-size: 12px; color: var(--green); font-weight: 700; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 8px; }
   .primary-result .disease { font-size: 20px; font-weight: 800; color: var(--green-dark); }
+  .primary-result.low-confidence { background: linear-gradient(135deg, #fef2f2, #ffffff); border-color: #fecaca; }
+  .primary-result.low-confidence .label { color: #dc2626; }
+  .primary-result.low-confidence .disease { color: #dc2626; font-size: 17px; }
 
   .chart-box { background: var(--card); border-radius: 20px; padding: 18px; border: 1px solid #eee; display: flex; align-items: center; justify-content: center; }
   .chart-box canvas { max-height: 180px; }
@@ -199,7 +211,11 @@ PAGE_TEMPLATE = """
   .solution-box .stitle { font-size: 12px; font-weight: 800; color: var(--orange); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
   .solution-box p { margin: 0; font-size: 13px; line-height: 1.7; }
 
-  .footnote { font-size: 11px; color: var(--muted); margin-top: 16px; text-align: center; }
+  .not-leaf-box { background: linear-gradient(135deg, #fef2f2, #fffdfd); border: 1px solid #fecaca; border-radius: 18px; padding: 18px; margin-top: 18px; }
+  .not-leaf-box .stitle { font-size: 12px; font-weight: 800; color: #dc2626; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .not-leaf-box p { margin: 0; font-size: 13px; line-height: 1.7; }
+
+  .footnote { font-size: 11px; color: var(--muted); margin-top: 16px; text-align: center; line-height: 1.6; }
 
   .category-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; margin-bottom: 18px; }
   .library-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
@@ -239,9 +255,9 @@ PAGE_TEMPLATE = """
 
   <div class="wrap">
     <div class="stats">
-      <div class="stat-card"><div class="num">Multiple</div><div class="label">Plant Types</div></div>
-      <div class="stat-card"><div class="num">Multiple</div><div class="label">Conditions</div></div>
-      <div class="stat-card"><div class="num">94%</div><div class="label">Accuracy</div></div>
+      <div class="stat-card"><div class="num">{{ num_crops }}</div><div class="label">Plant Types</div></div>
+      <div class="stat-card"><div class="num">{{ num_classes }}</div><div class="label">Conditions</div></div>
+      <div class="stat-card"><div class="num">94%</div><div class="label">Test Accuracy</div></div>
       <div class="stat-card"><div class="num">Free</div><div class="label">To Use</div></div>
     </div>
 
@@ -261,19 +277,19 @@ PAGE_TEMPLATE = """
           <button type="submit" id="submitBtn">\u2728 Analyze Leaf</button>
         </form>
         <div id="loading">\U0001F33F Analyzing your leaf...</div>
-         
-      {% if not_a_leaf %}
-      <div class="solution-box" style="background:#fef2f2; border-color:#fecaca; margin-top:18px;">
-          <div class="stitle" style="color:#dc2626;">\u26A0 No Leaf Detected</div>
+
+        {% if not_a_leaf %}
+        <div class="not-leaf-box">
+          <div class="stitle">\u26A0 No Leaf Detected</div>
           <p>This image doesn't appear to show a plant leaf. Please upload a clear photo of a single leaf for analysis.</p>
-      </div>
-      {% endif %}
+        </div>
+        {% endif %}
 
         {% if results %}
         <div class="result-grid">
-          <div class="primary-result">
-            <div class="label">Diagnosis</div>
-            <div class="disease">{{ results[0][0] }}</div>
+          <div class="primary-result {{ 'low-confidence' if not is_confident else '' }}">
+            <div class="label">{{ 'Diagnosis' if is_confident else '\u26A0 Uncertain' }}</div>
+            <div class="disease">{% if is_confident %}{{ results[0][0] }}{% else %}Low Confidence Match{% endif %}</div>
           </div>
           <div class="chart-box"><canvas id="confChart"></canvas></div>
         </div>
@@ -283,14 +299,21 @@ PAGE_TEMPLATE = """
         <div class="bar-bg"><div class="bar-fill" style="width: {{ (conf * 100)|round(1) }}%;"></div></div>
         {% endfor %}
 
-        {% if solution %}
+        {% if solution and is_confident %}
         <div class="solution-box">
           <div class="stitle">\U0001FA7A Recommended Action</div>
           <p>{{ solution }}</p>
         </div>
         {% endif %}
 
-        <div class="footnote">Based on visual pattern matching &mdash; always confirm with an expert before treatment.</div>
+        {% if not is_confident %}
+        <div class="not-leaf-box">
+          <div class="stitle">\u26A0 Low Confidence</div>
+          <p>The model's true confidence in this top match was only {{ "%.1f"|format(raw_top_confidence * 100) }}% out of all {{ num_classes }} trained categories \u2014 below the {{ (threshold*100)|int }}% threshold needed to trust it. Please try a clearer photo, or treat this result with caution.</p>
+        </div>
+        {% endif %}
+
+        <div class="footnote">Percentages above show the relative share among the top 3 matches only (they add up to 100% for readability), not the raw share out of all {{ num_classes }} trained categories. Always confirm with an expert before treatment.</div>
 
         <script>
           new Chart(document.getElementById('confChart'), {
@@ -315,7 +338,7 @@ PAGE_TEMPLATE = """
 
     <div class="section">
       <div class="section-title">\U0001F4DA What We Cover</div>
-      <div class="section-sub">LeafCare recognizes a wide range of plant health conditions across several categories.</div>
+      <div class="section-sub">LeafCare recognizes {{ num_classes }} conditions across {{ num_crops }} crop types.</div>
 
       <div class="category-grid">
         <div class="tip-card"><div class="temoji">\U0001F344</div><h4>Fungal Diseases</h4><p>Blights, rusts, mildews, and leaf spots caused by fungal infection.</p></div>
@@ -397,6 +420,8 @@ def index():
     results = None
     solution = None
     not_a_leaf = False
+    is_confident = True
+    raw_top_confidence = 0.0
     if request.method == "POST":
         file = request.files.get("image")
         if file and file.filename:
@@ -405,7 +430,7 @@ def index():
             file.save(filepath)
 
             if looks_like_a_leaf(filepath):
-                results, solution = predict_image(filepath)
+                results, solution, is_confident, raw_top_confidence = predict_image(filepath)
             else:
                 not_a_leaf = True
 
@@ -414,7 +439,12 @@ def index():
         results=results,
         solution=solution,
         library=DISEASE_LIBRARY,
-        not_a_leaf=not_a_leaf
+        not_a_leaf=not_a_leaf,
+        is_confident=is_confident,
+        raw_top_confidence=raw_top_confidence,
+        threshold=CONFIDENCE_THRESHOLD,
+        num_crops=NUM_CROPS,
+        num_classes=NUM_CLASSES
     )
 
 if __name__ == "__main__":
